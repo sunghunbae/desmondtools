@@ -1,0 +1,26 @@
+Keywords = [
+    {RMSD = {
+        Name = RMSD_Prot
+        ASL = "(mol. 1) and not atom.ele H"
+        Frame = 0
+        Panel = pl_interact_survey
+        SelectionType = Heavy
+        Tab = pl_rmsd_tab
+        Type = ASL
+        Unit = Angstrom
+        }
+    }
+    {RMSF = {
+        Name = RMSF_Lig
+        ASL = "(mol. 2) and not atom.e H"
+        FitBy = "(mol. 1) and not atom.e H"
+        Frame = 0
+        Panel = pl_interact_survey
+        Tab = l_rmsf_tab
+        Type = ASL
+        Unit = Angstrom
+        }
+    }
+]
+ProteinASL = "(mol. 1)"
+LigandASL = "(mol. 2)"
