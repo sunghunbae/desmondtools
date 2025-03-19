@@ -1,4 +1,4 @@
-# Python Utilities for Desmond Molecular Dynamics
+# Tools for Desmond Molecular Dynamics
 
 ## Introduction
 

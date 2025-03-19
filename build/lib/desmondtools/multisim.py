@@ -56,8 +56,8 @@ class Multisim:
             if template_path.is_file():
                 self.template_path = template_path
             else:
-                with importlib.resources.files('desmondtools') as template_path:
-                    self.template_path = template_path / template
+                template_path = importlib.resources.files('desmondtools')
+                self.template_path = template_path / template
             if self.template_path is None:
                 raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), template)
 

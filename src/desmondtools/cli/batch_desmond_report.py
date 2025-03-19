@@ -3,6 +3,9 @@ import sys
 import argparse
 import re
 
+from datetime import timedelta, datetime
+
+
 try:
     from schrodinger.application.desmond.packages import topo, traj, traj_util
     from schrodinger.structutils import analyze
@@ -11,7 +14,10 @@ except ImportError:
     sys.exit(1)
 
 
-if __name__ == '__main__': 
+def batch_report() -> None:
+
+    # requires Schrodinger Python API
+    subprocess.run([schrodinger_run, script_path.joinpath('batch-desmond-report.py')])
 
     run = os.environ["SCHRODINGER"]+"/run"
 

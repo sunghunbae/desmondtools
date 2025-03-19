@@ -29,9 +29,10 @@ Changelog       = "https://github.com/sunghunbae/desmondtools/blob/master/CHANGE
 Documentation   = "https://sunghunbae.github.io/desmondtools/"
 
 [project.scripts]
-mdinfo                  = "desmondtools.cli:mdinfo"
-maeinfo                 = "desmondtools.cli:maeinfo"
-cmsinfo                 = "desmondtools.cli:cmsinfo"
+batch-desmond-mdinfo    = "desmondtools.cli:batch_mdinfo"
+batch-desmond-maeinfo   = "desmondtools.cli:batch_maeinfo"
+batch-desmond-cmsinfo   = "desmondtools.cli:batch_cmsinfo"
+batch-desmond-cms2dcd   = "desmondtools.cli:batch_cms2dcd"
 batch-desmond-setup     = "desmondtools.cli:batch_setup"
 batch-desmond-md        = "desmondtools.cli:batch_md"
 batch-desmond-min       = "desmondtools.cli:batch_min"

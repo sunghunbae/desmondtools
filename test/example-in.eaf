@@ -1,0 +1,110 @@
+Keywords = [
+   {RMSD = {
+       ASL = "((mol. 1 and backbone) and not (atom.ele H) )"
+       Frame = 0
+       Panel = pl_interact_survey
+       SelectionType = Backbone
+       Tab = pl_rmsd_tab
+       Type = ASL
+       Unit = Angstrom
+    }
+   }
+
+   {RMSD = {
+       ASL = "(mol. 1 and sidechain )"
+       Frame = 0
+       Panel = pl_interact_survey
+       SelectionType = "Side chains"
+       Tab = pl_rmsd_tab
+       Type = ASL
+       Unit = Angstrom
+    }
+   }
+
+   {RMSD = {
+       ASL = "((mol. 1 and backbone ) and ( atom.ptype ' CA ') )"
+       Frame = 0
+       Panel = pl_interact_survey
+       SelectionType = C-Alpha
+       Tab = pl_rmsd_tab
+       Type = ASL
+       Unit = Angstrom
+    }
+   }
+
+   {RMSD = {
+       ASL = "(mol. 1 and not (atom.ele H) )"
+       Frame = 0
+       Panel = pl_interact_survey
+       SelectionType = Heavy
+       Tab = pl_rmsd_tab
+       Type = ASL
+       Unit = Angstrom
+    }
+   }
+
+   {SecondaryStructure = {
+       ASL = "(mol. 1 )"
+       Legend = "-1: NONE; 0: LOOP; 1: HELIX; 2: STRAND; 3:TURN"
+       Panel = pl_interact_survey
+       SelectionType = "(mol. 1 )"
+       Tab = p_sse_tab
+       Type = ASL
+    }
+   }
+
+   {RMSF = {
+       ASL = "((mol. 1 and backbone) and not (atom.ele H) )"
+       FitBy = "((mol. 1 and backbone) and not (atom.ele H) )"
+       Frame = 0
+       Panel = pl_interact_survey
+       SelectionType = Backbone
+       Tab = p_rmsf_tab
+       Type = ASL
+       Unit = Angstrom
+    }
+   }
+
+   {RMSF = {
+       ASL = "(mol. 1 and sidechain )"
+       FitBy = "((mol. 1 and backbone) and not (atom.ele H) )"
+       Frame = 0
+       Panel = pl_interact_survey
+       SelectionType = "Side chains"
+       Tab = p_rmsf_tab
+       Type = ASL
+       Unit = Angstrom
+    }
+   }
+
+   {RMSF = {
+       ASL = "((mol. 1 and backbone ) and ( atom.ptype ' CA ') )"
+       FitBy = "((mol. 1 and backbone) and not (atom.ele H) )"
+       Frame = 0
+       Panel = pl_interact_survey
+       SelectionType = C-Alpha
+       Tab = p_rmsf_tab
+       Type = ASL
+       Unit = Angstrom
+    }
+   }
+
+   {RMSF = {
+       ASL = "(mol. 1 and not (atom.ele H) )"
+       FitBy = "((mol. 1 and backbone) and not (atom.ele H) )"
+       Frame = 0
+       Panel = pl_interact_survey
+       SelectionType = Heavy
+       Tab = p_rmsf_tab
+       Type = ASL
+       Unit = Angstrom
+    }
+   }
+
+   {ProtProtInter = {
+       ASL = "mol. 1"
+    }
+   }
+]
+ProteinASL = "mol. 1"
+Trajectory = "r01/desmond_md_job_01_proteinprep_5t35_ad-out-out.cms"

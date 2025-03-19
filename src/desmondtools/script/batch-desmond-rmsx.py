@@ -1,23 +1,29 @@
 import sys
 import os
+import argparse
 import pandas as pd
 
 try:
     from schrodinger import structure
 except ImportError:
-    print("schrodinger python API is required")
+    print("Schrodinger Python API is required")
     sys.exit(0)
 
-(cms_file, event_analysis_outfile, prefix) = (sys.argv[1], sys.argv[2], sys.argv[3])
+parser = argparse.ArgumentParser(description="Trajectory RMSD and RMSF",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument('--eaf', dest="eaf", default="", help="event analysis outfile")
+parser.add_argument('--prefix', dest="prefix", default="", help="output prefix")
+parser.add_argument('cms', help="desmond cms output file")
+args = parser.parse_args()
 
-st_reader = structure.StructureReader(cms_file)
+st_reader = structure.StructureReader(args.cms)
 st = next(st_reader)
 
 tbl = {}
 rmsd_data = {'time_ns':[], 'rmsd':[]}
 rmsf_data = {"resSeq":[], "resName":[], "name":[], "atom_index":[], "rmsf":[]}
 
-with open(event_analysis_outfile, "r") as f:
+with open(args.eaf, "r") as f:
     for line in f:
         line = line.strip()
         if "Name" in line:
@@ -63,5 +69,6 @@ with open(event_analysis_outfile, "r") as f:
 
 rmsd_df = pd.DataFrame(rmsd_data)
 rmsf_df = pd.DataFrame(rmsf_data).sort_values(by=['resSeq','resName','atom_index'])
-rmsd_df.to_csv(f"{prefix}-rmsd.csv", index=False)
-rmsf_df.to_csv(f"{prefix}-rmsf.csv", index=False)
+
+rmsd_df.to_csv(f"{args.prefix}-rmsd.csv", index=False)
+rmsf_df.to_csv(f"{args.prefix}-rmsf.csv", index=False)
