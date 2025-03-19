@@ -11,12 +11,11 @@ authors = [{name = "Sung-Hun Bae", email="sunghun.bae@gmail.com"}, ]
 maintainers = [{name = "Sung-Hun Bae", email="sunghun.bae@gmail.com"}, ]
 description = "Tools for Desmond molecular dynamics"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 keywords = ["Desmond", "Multisim", "Molecular Dynamics"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]

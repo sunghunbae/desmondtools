@@ -4,7 +4,7 @@ Version: 1.1.0
 Summary: Tools for Desmond molecular dynamics
 Author-email: Sung-Hun Bae <sunghun.bae@gmail.com>
 Maintainer-email: Sung-Hun Bae <sunghun.bae@gmail.com>
-License: MIT
+License-Expression: MIT
 Project-URL: Homepage, https://github.com/sunghunbae/desmondtools
 Project-URL: Repository, https://github.com/sunghunbae/desmondtools.git
 Project-URL: Issues, https://github.com/sunghunbae/desmondtools/issues
@@ -13,7 +13,6 @@ Project-URL: Documentation, https://sunghunbae.github.io/desmondtools/
 Keywords: Desmond,Multisim,Molecular Dynamics
 Classifier: Development Status :: 3 - Alpha
 Classifier: Intended Audience :: Developers
-Classifier: License :: OSI Approved :: MIT License
 Classifier: Programming Language :: Python :: 3
 Classifier: Operating System :: OS Independent
 Requires-Python: >=3.11
