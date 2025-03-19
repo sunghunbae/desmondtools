@@ -2,15 +2,15 @@ import sys
 import os
 import argparse
 
-# entry > molecule > chain > residue > atom
-
 try:
     from schrodinger import structure
     from schrodinger.structutils import analyze
     from schrodinger.application.desmond.packages import traj_util
 except ImportError:
-    print("Schrodinger Python API is required")
+    print("schrodinger python API is required")
     sys.exit(0)
+
+# entry > molecule > chain > residue > atom
 
 parser = argparse.ArgumentParser(description="mae information",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)

@@ -2,6 +2,7 @@ LICENSE
 README.md
 pyproject.toml
 src/desmondtools/__init__.py
+src/desmondtools/cli.py
 src/desmondtools/desmond-md.cfg
 src/desmondtools/desmond-md.msj
 src/desmondtools/desmond-metad.cfg
@@ -30,12 +31,15 @@ src/desmondtools/cli/batch_desmond_report.py
 src/desmondtools/cli/batch_desmond_rmsx.py
 src/desmondtools/cli/batch_desmond_setup.py
 src/desmondtools/cli/schrodinger_run.py
+src/desmondtools/script/batch-cmsinfo.py
 src/desmondtools/script/batch-desmond-cmsinfo.py
 src/desmondtools/script/batch-desmond-dihedral.py
 src/desmondtools/script/batch-desmond-distance.py
 src/desmondtools/script/batch-desmond-ligrmsd.py
 src/desmondtools/script/batch-desmond-maeinfo.py
 src/desmondtools/script/batch-desmond-mmgbsa.py
+src/desmondtools/script/batch-desmond-report.py
 src/desmondtools/script/batch-desmond-rg.py
 src/desmondtools/script/batch-desmond-rmsx.py
+src/desmondtools/script/batch-maeinfo.py
 test/test_multisim.py

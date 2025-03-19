@@ -2,13 +2,12 @@ import sys
 import os
 import argparse
 
-
 try:
     from schrodinger import structure
     from schrodinger.structutils import analyze
     from schrodinger.application.desmond.packages import traj_util
 except ImportError:
-    print("Schrodinger Python API is required")
+    print("schrodinger python API is required")
     sys.exit(0)
 
 parser = argparse.ArgumentParser(description="trajectory information",
@@ -16,7 +15,7 @@ parser = argparse.ArgumentParser(description="trajectory information",
 parser.add_argument('--asl', dest="asl", default="", help="ASL")
 parser.add_argument('cms', nargs="+", help="desmond cms output file(s)")
 args = parser.parse_args()
-
+   
 for cms_file in args.cms:
     # id
     name = os.path.basename(cms_file).replace("-out.cms","").replace("desmond_md_job_","")

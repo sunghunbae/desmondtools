@@ -1,4 +1,4 @@
-Metadata-Version: 2.2
+Metadata-Version: 2.4
 Name: desmondtools
 Version: 1.1.0
 Summary: Tools for Desmond molecular dynamics
@@ -24,8 +24,9 @@ Requires-Dist: dotmap>=1.3
 Requires-Dist: pandas
 Requires-Dist: numpy
 Requires-Dist: pytest
+Dynamic: license-file
 
-# Python Utilities for Desmond Molecular Dynamics
+# Tools for Desmond Molecular Dynamics
 
 ## Introduction
 
