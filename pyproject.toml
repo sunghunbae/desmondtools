@@ -58,6 +58,7 @@ batch-desmond-rg        = "desmondtools.cli:batch_rg"
 batch-desmond-rmsx      = "desmondtools.cli:batch_rmsx"
 batch-desmond-mmgbsa    = "desmondtools.cli:batch_mmgbsa"
 batch-desmond-cif       = "desmondtools.cli:batch_cif"
+batch-desmond-pdb       = "desmondtools.cli:batch_pdb"
 
 [tool.setuptools.dynamic]
 version = {attr = "desmondtools.__version__"}

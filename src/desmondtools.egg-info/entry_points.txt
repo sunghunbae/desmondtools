@@ -11,6 +11,7 @@ batch-desmond-mdinfo = desmondtools.cli:batch_mdinfo
 batch-desmond-metad = desmondtools.cli:batch_metad
 batch-desmond-min = desmondtools.cli:batch_min
 batch-desmond-mmgbsa = desmondtools.cli:batch_mmgbsa
+batch-desmond-pdb = desmondtools.cli:batch_pdb
 batch-desmond-pli = desmondtools.cli:batch_pli
 batch-desmond-report = desmondtools.cli:batch_report
 batch-desmond-rg = desmondtools.cli:batch_rg
