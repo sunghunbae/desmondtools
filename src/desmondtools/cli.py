@@ -16,7 +16,7 @@ from importlib.resources import files
 import desmondtools
 script_path = files('desmondtools.script')
 
-from desmondtools import Multisim
+from desmondtools import Multisim, Maestro
 
 SCHRODINGER = os.environ["SCHRODINGER"]
 
@@ -1094,3 +1094,18 @@ def batch_pli():
         )
     fig = g.get_figure()
     fig.savefig(args.out + '.pdf', bbox_inches="tight", pad_inches=0.2, dpi=150)
+
+
+def batch_cif():
+    parser = argparse.ArgumentParser(description="COnvert Maestro file(s) to CIF file(s)",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('mae', nargs='+', default=[], help='input maestro filename(s)')
+    args = parser.parse_args()
+
+    if len(args.mae) == 0:
+        argparse.print_help()
+        sys.exit(0)
+    
+    for filename in args.mae:
+        u = Maestro(filename)
+        u.convert_to_mmcif()

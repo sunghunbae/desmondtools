@@ -425,6 +425,10 @@ See https://www.schrodinger.com/kb/788642 for extending metadynamics simulation.
     options:
         toc_label: "Interaction"
 
+::: desmondtools.Maestro
+    options:
+        toc_label: "Maestro"
+        
 ::: desmondtools.cli
     options:
         toc_label: "CLI"

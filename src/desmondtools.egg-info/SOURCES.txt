@@ -12,6 +12,7 @@ src/desmondtools/desmond-min.msj
 src/desmondtools/desmond-rmsx-analysis.eaf
 src/desmondtools/desmond-setup.msj
 src/desmondtools/event.py
+src/desmondtools/maestro.py
 src/desmondtools/multisim.py
 src/desmondtools.egg-info/PKG-INFO
 src/desmondtools.egg-info/SOURCES.txt

@@ -1,4 +1,5 @@
 [console_scripts]
+batch-desmond-cif = desmondtools.cli:batch_cif
 batch-desmond-cms2dcd = desmondtools.cli:batch_cms2dcd
 batch-desmond-cmsinfo = desmondtools.cli:batch_cmsinfo
 batch-desmond-dihedral = desmondtools.cli:batch_dihedral

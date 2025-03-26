@@ -1,3 +1,6 @@
+## 1.2.0
+- added Maestro class that converts .mae/.maegz files to .cif
+
 ## 1.1.1
 - fixed project.license in the project.toml
 
