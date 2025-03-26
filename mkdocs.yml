@@ -20,11 +20,16 @@ plugins:
         default_handler: python
         handlers:
             python:
+                paths: ["src", "src/desmondtools"]
                 options:
                     docstring_style: google
                     show_if_no_docstring: true
                     show_root_heading: true
                     show_source: true
+                    parameter_headings: true
+                    show_root_full_path: true
+                    show_category_heading: true
+                    show_symbol_type_toc: true
 
 markdown_extensions:
   - pymdownx.highlight:

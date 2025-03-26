@@ -9,6 +9,7 @@ from pyparsing import pyparsing_common as ppc
 from dotmap import DotMap
 
 
+
 class Multisim:
     """Parsing Desmond multisim .cfg and .msj expressions"""
     # variable, value, array, expr

@@ -307,6 +307,7 @@ Command-Line Interfaces (CLI) are built on the `Multisim` class. Some CLIs requi
 
 | Command-line interface | Description |
 | ---------------------- | ----------- |
+| batch-desmond-cif      | Convert .mae/.maegz to .cif |
 | batch-desmond-mdinfo   | Check running MD simulations |
 | batch-desmond-maeinfo  | Show info of .mae/.maegz file(s) |
 | batch-desmond-cmsinfo  | Show info of .cms file(s) |
@@ -412,23 +413,24 @@ assuming that the initial hill height ω0 (height parameter in the Metadynamics 
 
 See https://www.schrodinger.com/kb/788642 for extending metadynamics simulation.
 
+## Python Classes
 
 ::: desmondtools.Multisim
     options:
+        heading: "Class Multisim"
         toc_label: "Multisim"
 
 ::: desmondtools.Event
     options:
+        heading: "Class Event"
         toc_label: "Event"
 
 ::: desmondtools.Interaction
     options:
+        heading: "Class Interaction"
         toc_label: "Interaction"
 
 ::: desmondtools.Maestro
     options:
+        heading: "Class Maestro"
         toc_label: "Maestro"
-        
-::: desmondtools.cli
-    options:
-        toc_label: "CLI"

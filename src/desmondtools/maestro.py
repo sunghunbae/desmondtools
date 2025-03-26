@@ -82,7 +82,6 @@ class Maestro:
             "_atom_site": None,
             } # mmcif-like object
         self.iamap = {}
-        self.output = io.StringIO()
 
 
     def append_entry(self, title):
@@ -237,13 +236,14 @@ class Maestro:
 
     def value_or_default(self, obj, k, default):
         """ return value or default """
-        v = default
+        v = None
         if k in obj:
             if type(obj[k]) == str:
                 v = obj[k].strip()
-                if not v:
-                    v = default
-        return v
+        if v is None:
+            return default
+        else:
+            return v
 
 
     def convert_to_mmcif(self):
@@ -302,7 +302,7 @@ class Maestro:
 
                 # build hierarchical structure of chain/ resSeq/ resName
                 chainId = self.value_or_default(data,"s_m_chain_name", "A")
-                resSeq = int(data["i_m_residue_number"])
+                resSeq = int(self.value_or_default(data, "i_m_residue_number", 1))
                 resName = self.value_or_default(data, "s_m_pdb_residue_name", "?")
                 if resName in self.std_rename:
                     resName = self.std_rename[resName]
@@ -431,28 +431,14 @@ class Maestro:
                     
         self.maesto_file.close()
         self.write_mmcif()
-        print(self.output.getvalue())
-        self.output.close()
 
 
-    def write_mmcif(self, in_memory:bool=True):
+    def write_mmcif(self):
         """ write to .cif file """
+        output = "{}.cif".format(self.prefix)
+        print("writing to {}".format(output))
 
-        if type(self.mmcif["_entry"]["id"]) == list:
-            # remove all non-word characters
-            prefix = re.sub(r"[^\w]", " ", self.mmcif["_entry"]["id"][-1])
-        else:
-            prefix = re.sub(r"[^\w]", " ", self.mmcif["_entry"]["id"])
-
-        # replace all whitespace with a slash
-        prefix = re.sub(r"\s+","-", prefix.strip())
-
-        if not in_memory:
-            output = "{}.cif".format(prefix)
-            print("writing to {}".format(output))
-            cifo = CifFileWriter(output)
-        else:
-            cifo = CifFileWriter(self.output)
+        cifo = CifFileWriter(output)
         # clean up undefined dictionary
         # force to copy a list to avoid 
         # RuntimeError: dictionary changed size during iteration
@@ -460,4 +446,4 @@ class Maestro:
             if not self.mmcif[k]:
                 del self.mmcif[k]
 
-        cifo.write({ "CCWS" : self.mmcif }) # 'CCWS' ?
+        cifo.write({ "desmondtools" : self.mmcif })
