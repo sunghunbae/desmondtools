@@ -1,9 +1,9 @@
 [console_scripts]
-batch-desmond-cif = desmondtools.cli:batch_cif
 batch-desmond-cms2dcd = desmondtools.cli:batch_cms2dcd
 batch-desmond-cmsinfo = desmondtools.cli:batch_cmsinfo
 batch-desmond-dihedral = desmondtools.cli:batch_dihedral
 batch-desmond-distance = desmondtools.cli:batch_distance
+batch-desmond-export = desmondtools.cli:export
 batch-desmond-ligrmsd = desmondtools.cli:batch_ligrmsd
 batch-desmond-maeinfo = desmondtools.cli:batch_maeinfo
 batch-desmond-md = desmondtools.cli:batch_md
@@ -11,7 +11,6 @@ batch-desmond-mdinfo = desmondtools.cli:batch_mdinfo
 batch-desmond-metad = desmondtools.cli:batch_metad
 batch-desmond-min = desmondtools.cli:batch_min
 batch-desmond-mmgbsa = desmondtools.cli:batch_mmgbsa
-batch-desmond-pdb = desmondtools.cli:batch_pdb
 batch-desmond-pli = desmondtools.cli:batch_pli
 batch-desmond-report = desmondtools.cli:batch_report
 batch-desmond-rg = desmondtools.cli:batch_rg

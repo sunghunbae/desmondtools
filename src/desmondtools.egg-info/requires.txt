@@ -1,4 +1,5 @@
 pdbecif
+biopython
 pyparsing>=3.0
 dotmap>=1.3
 pandas

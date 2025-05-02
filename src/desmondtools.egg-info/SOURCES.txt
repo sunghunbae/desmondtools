@@ -20,8 +20,8 @@ src/desmondtools.egg-info/entry_points.txt
 src/desmondtools.egg-info/requires.txt
 src/desmondtools.egg-info/top_level.txt
 src/desmondtools/cli/__init__.py
-src/desmondtools/cli/batch_desmond_cif.py
 src/desmondtools/cli/batch_desmond_cms2dcd.py
+src/desmondtools/cli/batch_desmond_export.py
 src/desmondtools/cli/batch_desmond_md.py
 src/desmondtools/cli/batch_desmond_mdinfo.py
 src/desmondtools/cli/batch_desmond_metad.py

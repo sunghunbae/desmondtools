@@ -1,3 +1,8 @@
+## 1.4.0
+- issue: export to mmcif is not reliable.
+- added `Maestro.export()` to export PDB.
+- added `Maestro.parse()`
+
 ## 1.3.0
 - renamed `Maestro.convert_to_cif()` to `Maestro.to_cif()`
 - added `Maestro.to_pdb()`

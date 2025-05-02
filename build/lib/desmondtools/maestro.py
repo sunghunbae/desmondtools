@@ -9,9 +9,21 @@ import io
 import operator
 
 from functools import reduce
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TextIO
 from pathlib import Path
+from types import SimpleNamespace
 
+def dict_to_simplenamespace(data):
+    if isinstance(data, dict):
+        return SimpleNamespace(**{k: dict_to_simplenamespace(v) for k, v in data.items()})
+    elif isinstance(data, list):
+        return [dict_to_simplenamespace(item) for item in data]
+    else:
+        return data
+    
+
+from io import StringIO
+from Bio.PDB import PDBParser, MMCIFIO
 from pdbecif.mmcif_io import CifFileWriter
 
 """
@@ -24,6 +36,341 @@ References:
     - https://pdbeurope.github.io/pdbecif/
 
 """
+
+# standard DNA/RNA/Protein
+std_residues = [
+    "ADE", "GUA", "CYT", "URA", "THY",
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
+    "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+    "URI", "CYX", "CYM",
+    "HID", "HIE", "HIP",
+    ]
+
+# conversion to standard residue name
+std_rename = {
+    "URI" : "URA",
+    "CYX" : "CYS", # disulfide-bonded
+    "CYM" : "CYS", # deprotonated (- charge) and/or bound to metal atoms
+    "HID" : "HIS", # protonated at delta position
+    "HIE" : "HIS", # protonated at epsilon
+    "HIP" : "HIS", # protonated at both delta and epsilon
+} 
+
+atomic_symbol = {
+     1 : "H",   2 : "He",  3 : "Li",  4 : "Be",  5 : "B",   6 : "C",   7 : "N",   8 : "O",   9 : "F",  10 : "Ne",
+    11 : "Na", 12 : "Mg", 13 : "Al", 14 : "Si", 15 : "P",  16 : "S",  17 : "Cl", 18 : "Ar", 19 : "K",  20 : "Ca",
+    21 : "Sc", 22 : "Ti", 23 : "V",  24 : "Cr", 25 : "Mn", 26 : "Fe", 27 : "Co", 28 : "Ni", 29 : "Cu", 30 : "Zn",
+    31 : "Ga", 32 : "Ge", 33 : "As", 34 : "Se", 35 : "Br", 36 : "Kr", 37 : "Rb", 38 : "Sr", 39 : "Y",  40 : "Zr",
+    41 : "Nb", 42 : "Mo", 43 : "Tc", 44 : "Ru", 45 : "Rh", 46 : "Pd", 47 : "Ag", 48 : "Cd", 49 : "In", 50 : "Sn",
+    51 : "Sb", 52 : "Te", 53 : "I",  54 : "Xe", 55 : "Cs", 56 : "Ba", 57 : "La", 58 : "Ce", 59 : "Pr", 60 : "Nd",
+    61 : "Pm", 62 : "Sm", 63 : "Eu", 64 : "Gd", 65 : "Tb", 66 : "Dy", 67 : "Ho", 68 : "Er", 69 : "Tm", 70 : "Yb",
+    71 : "Lu", 72 : "Hf", 73 : "Ta", 74 : "W",  75 : "Re", 76 : "Os", 77 : "Ir", 78 : "Pt", 79 : "Au", 80 : "Hg",
+    81 : "Tl", 82 : "Pb", 83 : "Bi", 84 : "Po", 85 : "At", 86 : "Rn", 87 : "Fr", 88 : "Ra", 89 : "Ac", 90 : "Th",
+    91 : "Pa", 92 : "U",  93 : "Np", 94 : "Pu", 95 : "Am", 96 : "Cm", 97 : "Bk", 98 : "Cf", 99 : "Es", 100: "Fm",
+    101: "Md", 102: "No", 103: "Lr", 104: "Rf", 105: "Db", 106: "Sg", 107: "Bh", 108: "Hs", 109: "Mt", 110: "Ds",
+    111: "Rg", 112: "Cn", 113: "Nh", 114: "Fl", 115: "Mc", 116: "Lv", 117: "Ts", 118: "Og",
+}
+
+
+def PDB_MODEL_FORMAT(serial:int) -> str:
+    """
+    PDB format:
+        COLUMNS        DATA  TYPE    FIELD          DEFINITION
+        ---------------------------------------------------------------------------------------
+        1 -  6        Record name   "MODEL "
+        11 - 14        Integer       serial         Model serial number.
+    """
+    return "{:<6s}     {:4d}".format("MODEL", serial)
+
+
+def PDB_ATOM_FORMAT(data_vector:List[Dict[str, Any]], 
+                    default_resName:str="UNL", 
+                    default_chainId:str="X") -> List[str]:
+    """
+    PDB format:
+        COLUMNS        DATA  TYPE    FIELD        DEFINITION
+        -------------------------------------------------------------------------------------
+        1 -  6        Record name   "ATOM  " or "HETATM"
+        7 - 11        Integer       serial       Atom  serial number.
+        13 - 16        Atom          name         Atom name.
+        17             Character     altLoc       Alternate location indicator.
+        18 - 20        Residue name  resName      Residue name.
+        22             Character     chainID      Chain identifier.
+        23 - 26        Integer       resSeq       Residue sequence number.
+        27             AChar         iCode        Code for insertion of residues.
+        31 - 38        Real(8.3)     x            Orthogonal coordinates for X in Angstroms.
+        39 - 46        Real(8.3)     y            Orthogonal coordinates for Y in Angstroms.
+        47 - 54        Real(8.3)     z            Orthogonal coordinates for Z in Angstroms.
+        55 - 60        Real(6.2)     occupancy    Occupancy.
+        61 - 66        Real(6.2)     tempFactor   Temperature  factor.
+        77 - 78        LString(2)    element      Element symbol, right-justified.
+        79 - 80        LString(2)    charge       Charge  on the atom.
+    """
+    pdblines = ""
+    for data in data_vector:
+        try:
+            assert data["s_m_pdb_residue_name"].strip() in std_residues
+            keyword = "ATOM"
+        except:
+            keyword = "HETATM"
+        try:
+            serial = int(data['i_pdb_PDB_serial'])
+        except:
+            serial = int(data['atom_index'])
+        try:
+            chainId = data['s_m_chain_name']
+        except:
+            chainId = default_chainId
+        try:
+            altLoc = data['s_pdb_altloc_chars'][0]
+        except:
+            altLoc = " "
+        try:
+            name = data['s_m_pdb_atom_name']
+        except:
+            try:
+                atom_number = int(data['i_m_atomic_number'])
+                atom_index = int(data['atom_index'])
+                name = atomic_symbol[atom_number] + str(atom_index)
+            except:
+                debug_dict(data)
+                sys.exit(1)
+        try:
+            resName = data['s_m_pdb_residue_name']
+        except:
+            resName = default_resName
+
+        resSeq = int(get_value_or_default(data, 'i_m_residue_number', "1"))
+        x = float(data['r_m_x_coord'])
+        y = float(data['r_m_y_coord'])
+        z = float(data['r_m_z_coord'])
+        try:
+            occupancy = "%6.2f" % float(get_value_or_default(data, 'r_m_pdb_occupancy', "1.0"))
+        except:
+            occupancy = "%6.2f" % 1.0
+        try:
+            tempFactor = "%6.2f" % float(get_value_or_default(data, 'r_m_pdb_tfactor', "0.0"))
+        except:
+            tempFactor = "%6.2f" % 0.0
+        try:
+            element = atomic_symbol[int(data['i_m_atomic_number'])]
+        except:
+            element = "  "
+        try:
+            ch = int(data['i_m_formal_charge'])
+            if ch == 0:
+                charge = "  "
+            elif ch > 0:
+                charge = "%d+" % abs(ch)
+            elif ch < 0:
+                charge = "%d-" % abs(ch)
+        except:
+            charge = "  "
+        iCode = " "
+        blank = " "*11
+
+        line = "{:<6s}{:5d} {:4s}{:1s}{:4s}{:1s}{:4d}{:1s}   {:8.3f}{:8.3f}{:8.3f}{}{}{}{}{}".format(
+                keyword, serial, name, altLoc, resName, chainId, resSeq, iCode,
+                x, y, z, occupancy, tempFactor, blank, element, charge,
+            )
+        pdblines += (line + "\n")
+    return pdblines
+
+
+def PDB_CONECT_FORMAT(v:Dict[str, Any]) -> List[str]:
+    """
+    PDB format:
+        COLUMNS       DATA  TYPE      FIELD        DEFINITION
+        -------------------------------------------------------------------------
+        1 -  6        Record name    "CONECT"
+        7 - 11       Integer        serial       Atom  serial number
+        12 - 16        Integer        serial       Serial number of bonded atom
+        17 - 21        Integer        serial       Serial  number of bonded atom
+        22 - 26        Integer        serial       Serial number of bonded atom
+        27 - 31        Integer        serial       Serial number of bonded atom
+    """
+    keyword="CONECT"
+    bonded = {}
+    for d in v:
+        i = int(d['i_m_from'])
+        j = int(d['i_m_to'])
+        if i in bonded:
+            bonded[i].append(j)
+        else:
+            bonded[i] = [j]
+        if j in bonded:
+            bonded[j].append(i)
+        else:
+            bonded[j] = [i]
+    pdblines = ""
+    for i in sorted(bonded):
+        bonded_serials = ""
+        for j in sorted(bonded[i]):
+            bonded_serials += "{:5d}".format(j)
+        pdblines += "{:<6s}{:5d}{}\n".format(keyword, i, bonded_serials)
+    return pdblines
+
+
+
+def to_pdb_str(entry:SimpleNamespace, default_resName:str="UNL", default_chainId:str="X") -> str:
+    """
+    PDB format:
+        COLUMNS        DATA  TYPE    FIELD        DEFINITION
+        -------------------------------------------------------------------------------------
+         1 -  6        Record name   "ATOM  " or "HETATM"
+         7 - 11        Integer       serial       Atom serial number.
+        13 - 16        Atom          name         Atom name.
+        17             Character     altLoc       Alternate location indicator.
+        18 - 20        Residue name  resName      Residue name.
+        22             Character     chainID      Chain identifier.
+        23 - 26        Integer       resSeq       Residue sequence number.
+        27             AChar         iCode        Code for insertion of residues.
+        31 - 38        Real(8.3)     x            Orthogonal coordinates for X in Angstroms.
+        39 - 46        Real(8.3)     y            Orthogonal coordinates for Y in Angstroms.
+        47 - 54        Real(8.3)     z            Orthogonal coordinates for Z in Angstroms.
+        55 - 60        Real(6.2)     occupancy    Occupancy.
+        61 - 66        Real(6.2)     tempFactor   Temperature  factor.
+        77 - 78        LString(2)    element      Element symbol, right-justified.
+        79 - 80        LString(2)    charge       Charge  on the atom.
+
+    PDB format:
+        COLUMNS       DATA  TYPE      FIELD        DEFINITION
+        -------------------------------------------------------------------------
+         1 -  6        Record name    "CONECT"
+         7 - 11        Integer        serial       Atom  serial number
+        12 - 16        Integer        serial       Serial number of bonded atom
+        17 - 21        Integer        serial       Serial number of bonded atom
+        22 - 26        Integer        serial       Serial number of bonded atom
+        27 - 31        Integer        serial       Serial number of bonded atom
+    """
+
+    formatted_pdb_lines = ""
+    
+    # mandatory lists
+    X = list(map(float, entry.f_m_ct.m_atom.r_m_x_coord))
+    Y = list(map(float, entry.f_m_ct.m_atom.r_m_y_coord))
+    Z = list(map(float, entry.f_m_ct.m_atom.r_m_z_coord))
+    A = list(map(int, entry.f_m_ct.m_atom.i_m_atomic_number))
+
+    # optional
+    LresName = getattr(entry.f_m_ct.m_atom, 's_m_pdb_residue_name', None)
+    LchainId = getattr(entry.f_m_ct.m_atom, 's_m_chain_name', None)
+    LresSeq = getattr(entry.f_m_ct.m_atom, 'i_m_residue_number', None)
+    Loccupancy = getattr(entry.f_m_ct.m_atom, 'r_m_pdb_occupancy', None)
+    LtempFactor = getattr(entry.f_m_ct.m_atom, 'r_m_pdb_tfactor', None)
+    LaltLoc = getattr(entry.f_m_ct.m_atom, 's_pdb_altloc_chars', None)
+    Lname = getattr(entry.f_m_ct.m_atom, 's_m_pdb_atom_name', None)
+    Lcharge = getattr(entry.f_m_ct.m_atom, 'i_m_formal_charge', None)
+    # Latomic_number = getattr(entry.f_m_ct.m_atom, 'i_m_atomic_number', None)
+
+    # bond connectivity
+    Lfrom = getattr(entry.f_m_ct.m_bond, 'i_m_from', None)
+    Lto = getattr(entry.f_m_ct.m_bond, 'i_m_to', None)
+    # Lorder = getattr(entry.f_m_ct.m_bond, 'i_m_order', None)
+    
+    for i, (x, y, z) in enumerate(zip(X, Y, Z)):
+        if LresName:
+            resName = LresName[i]
+            if (resName in std_residues):
+                keyword = "ATOM"
+            else:
+                keyword = "HETATM"
+        else:
+            resName = default_resName
+            keyword = "HETATM"
+        serial = i + 1
+        if Lname:
+            name = Lname[i]
+        else:
+            name = atomic_symbol[A[i]] + str(serial)
+        if LaltLoc:
+            altLoc = str(LaltLoc[i])[0]
+        else:
+            altLoc = " "
+        if LchainId:
+            chainId = str(LchainId[i])[0]
+        else:
+            chainId = default_chainId
+        if LresSeq:
+            resSeq = int(LresSeq[i])
+        else:
+            resSeq = 1
+        iCode = " "
+        if Loccupancy:
+            occupancy = float(Loccupancy[i])
+        else:
+            occupancy = 1.0
+        if LtempFactor:
+            tempFactor = float(LtempFactor[i])
+        else:
+            tempFactor = 0.0
+        element = f"{atomic_symbol[A[i]]:>2s}"
+        charge = "  "
+        if Lcharge:
+            ch = int(Lcharge[i])
+            if ch > 0:
+                charge = "%d+" % abs(ch)
+            elif ch < 0:
+                charge = "%d-" % abs(ch)
+        
+        line = (
+            f"{keyword:<6}{serial:5d} {name:^4s}{altLoc:1s}{resName:<4s}"
+            f"{chainId:<1}{resSeq:4d}{iCode:1s}   "
+            f"{x:8.3f}{y:8.3f}{z:8.3f}{occupancy:6.2f}{tempFactor:6.2f}"
+        )
+
+        line = line.ljust(80, ' ')
+        line = line[:76] + element + charge + '\n'
+        
+        formatted_pdb_lines += line
+    
+    # bond
+    if Lfrom and Lto:
+        Lfrom = list(map(int, Lfrom))
+        Lto = list(map(int, Lto))
+        bonded = {}
+        for i, j in zip(Lfrom, Lto):
+            if i in bonded:
+                bonded[i].add(j)
+            else:
+                bonded[i] = {j}
+            if j in bonded:
+                bonded[j].add(i)
+            else:
+                bonded[j] = {i}
+        for i in sorted(bonded):
+            line = f"CONECT{i:5d}"
+            for j in sorted(bonded[i]):
+                line += f"{j:5d}"
+            formatted_pdb_lines += line + '\n'
+
+    return formatted_pdb_lines
+
+
+
+def get_value_or_default(obj, k, default):
+    """return non-empty value from a dictionary or default value"""
+    if (k in obj) and isinstance(obj[k], str) and obj[k].strip():
+        return obj[k].strip()
+    else:
+        return default
+        
+
+def safe_filename(filename:str):
+    """Replaces or removes characters that are unsafe for a filename."""
+    # Replace spaces with underscores
+    filename = filename.replace(" ", "_")
+    # Remove or replace special characters
+    filename = re.sub(r'[^a-zA-Z0-9._-]', '', filename)
+    # Remove leading and trailing spaces/underscores
+    filename = filename.strip("._-")
+    return filename
+    
+
+def debug_dict(data):
+    for k in data:
+        print("%-30s %-s" % (k,data[k]))
+
 
 
 class Maestro:
@@ -113,83 +460,158 @@ class Maestro:
         s_glide_torcontrol_name
     """
 
-    # standard DNA/RNA/Protein
-    std_residues = [
-        "ADE", "GUA", "CYT", "URA", "THY",
-        "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
-        "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
-    ]
 
-    # conversion to standard residue name
-    std_rename = {
-        "URI" : "URA",
-        "CYX" : "CYS", # disulfide-bonded
-        "CYM" : "CYS", # deprotonated (- charge) and/or bound to metal atoms
-        "HID" : "HIS", # protonated at delta position
-        "HIE" : "HIS", # protonated at epsilon
-        "HIP" : "HIS", # protonated at both delta and epsilon
-    } 
-
-    atomic_symbol = {
-         1 : "H",   2 : "He",  3 : "Li",  4 : "Be",  5 : "B",   6 : "C",   7 : "N",   8 : "O",   9 : "F",  10 : "Ne",
-        11 : "Na", 12 : "Mg", 13 : "Al", 14 : "Si", 15 : "P",  16 : "S",  17 : "Cl", 18 : "Ar", 19 : "K",  20 : "Ca",
-        21 : "Sc", 22 : "Ti", 23 : "V",  24 : "Cr", 25 : "Mn", 26 : "Fe", 27 : "Co", 28 : "Ni", 29 : "Cu", 30 : "Zn",
-        31 : "Ga", 32 : "Ge", 33 : "As", 34 : "Se", 35 : "Br", 36 : "Kr", 37 : "Rb", 38 : "Sr", 39 : "Y",  40 : "Zr",
-        41 : "Nb", 42 : "Mo", 43 : "Tc", 44 : "Ru", 45 : "Rh", 46 : "Pd", 47 : "Ag", 48 : "Cd", 49 : "In", 50 : "Sn",
-        51 : "Sb", 52 : "Te", 53 : "I",  54 : "Xe", 55 : "Cs", 56 : "Ba", 57 : "La", 58 : "Ce", 59 : "Pr", 60 : "Nd",
-        61 : "Pm", 62 : "Sm", 63 : "Eu", 64 : "Gd", 65 : "Tb", 66 : "Dy", 67 : "Ho", 68 : "Er", 69 : "Tm", 70 : "Yb",
-        71 : "Lu", 72 : "Hf", 73 : "Ta", 74 : "W",  75 : "Re", 76 : "Os", 77 : "Ir", 78 : "Pt", 79 : "Au", 80 : "Hg",
-        81 : "Tl", 82 : "Pb", 83 : "Bi", 84 : "Po", 85 : "At", 86 : "Rn", 87 : "Fr", 88 : "Ra", 89 : "Ac", 90 : "Th",
-        91 : "Pa", 92 : "U",  93 : "Np", 94 : "Pu", 95 : "Am", 96 : "Cm", 97 : "Bk", 98 : "Cf", 99 : "Es", 100: "Fm",
-        101: "Md", 102: "No", 103: "Lr", 104: "Rf", 105: "Db", 106: "Sg", 107: "Bh", 108: "Hs", 109: "Mt", 110: "Ds",
-        111: "Rg", 112: "Cn", 113: "Nh", 114: "Fl", 115: "Mc", 116: "Lv", 117: "Ts", 118: "Og",
-    }
-    
     def __init__(self, filename:str, max_two_entries:bool=True) -> None:
         """ initialize """
         if not Path(filename).exists:
             print(f"Error file not found: {filename}")
             sys.exit(1)
         
-        self.filename = filename
-        self.prefix = None
-        self.contents = None
-
-        if filename.endswith('.maegz'):
-            self.prefix = filename.replace(".maegz", "")
-            with gzip.open(filename, 'rt') as f:
-                self.contents = f.readlines()
+        self.filename = filename     # ex: ./dir/a.maegz  ./dir/a.mae.gz
+        self.filename_prefix = None  # ex: ./dir/a        ./dir/a
+        self.filename_stem = None    # ex: a              a
+        self.lines = None
+        self.entries = None
         
-        elif filename.endswith('.mae.gz'):
-            self.prefix = filename.replace(".mae.gz", "")
-            with gzip.open(filename, "rt") as f:
-                self.contents = f.readlines()
-        
-        elif filename.endswith('.mae'):
-            self.prefix = filename.replace(".mae", "")
-            with open(filename, "rt") as f:
-                self.contents = f.readlines()
-        else:
-            print("Error : .mae, .mae.gz, or .maegz file is expected")
-            sys.exit(1)
 
         self.max_two_entries = max_two_entries
-        self.count = re.compile(r'\[(\d+)\]')
         self.title = ""
         self.serial = 0
         self.usedId = {}
-        self.mmcif = {
-            "_entry": None, 
-            "_chem_comp_bond": None, 
-            "_atom_site": None,
-            } # mmcif-like object
+        self.mmcif = {"_entry": None, "_chem_comp_bond": None, "_atom_site": None}
         self.iamap = {}
+
+
+    @staticmethod
+    def getFromDict(dataDict, mapList):
+        return reduce(operator.getitem, mapList, dataDict)
+
+
+    @staticmethod
+    def setInDict(dataDict, mapList, value):
+        if mapList:
+            Maestro.getFromDict(dataDict, mapList[:-1])[mapList[-1]] = value
+        else:
+            for k,v in value.items():
+                dataDict[k] = v
+
+
+    def parse_impl(self, f:TextIO) -> None:
+        """Parse Maestro file to a list of dictionaries"""
+        self.entries = []
+        count = re.compile(r'(\w+)\[(\d+)\]')
+        tokens = shlex.split(f.read())
+        level = []
+        data = {}
+        previous_token = None
+        header = False
+        extra_column = 0
+        num_repeat = 1
+        skip = False
+        for token in tokens :
+            if token == "#" :
+                skip = not skip # invert
+                continue
+            elif skip:
+                continue
+            elif token == "{" :
+                header = True
+                key = []
+                val = []
+                arr = []
+                if previous_token:
+                    if previous_token == "f_m_ct" and data:
+                        self.entries.append(data)
+                        data = {}
+                    try:
+                        (block, num_repeat) = count.findall(previous_token)[0]
+                        num_repeat = int(num_repeat)
+                        extra_column = 1
+                    except:
+                        block = previous_token
+                        num_repeat = 1
+                        extra_column = 0
+                    level.append(block)
+
+            elif token == "}":
+                if level: 
+                    level.pop()
+            elif token == ":::":
+                header = False
+            elif header:
+                key.append(token)
+            else:
+                val.append(token)
+                # only store f_m_ct blocks (level != [])
+                if len(val) == (len(key)+extra_column) and level :
+                    arr.append(val[extra_column:])
+                    val = []
+                    if len(arr) == num_repeat:
+                        if len(arr) == 1:
+                            Maestro.setInDict(data, level, dict(zip(key, arr[0])))
+                        else:
+                            T = list(zip(*arr)) # transpose
+                            Maestro.setInDict(data, level, dict(zip(key, T)))
+            previous_token = token
+            
+        if data:
+            self.entries.append(data)
+
+
+    def parse(self) -> None:
+        """Parse a Maestro file
+
+            set self.lines, self.filename_prefix, self.filename_stem
+        """
+        if self.filename.endswith('.maegz'):
+            self.filename_prefix = self.filename.replace(".maegz", "")
+            with gzip.open(self.filename, 'rt') as f:
+                self.parse_impl(f)
+        
+        elif self.filename.endswith('.mae.gz'):
+            self.filename_prefix = self.filename.replace(".mae.gz", "")
+            with gzip.open(self.filename, "rt") as f:
+                self.parse_impl(f)
+        
+        elif self.filename.endswith('.mae'):
+            self.filename_prefix = self.filename.replace(".mae", "")
+            with open(self.filename, "rt") as f:
+                self.parse_impl(f)
+        else:
+            print("Error : .mae, .mae.gz, or .maegz file is expected")
+            sys.exit(1)
+        self.filename_stem = Path(self.filename_prefix).stem
+
+
+    def read_lines(self) -> None:
+        """Read a Maestro file
+
+            set self.lines, self.filename_prefix, self.filename_stem
+        """
+        if self.filename.endswith('.maegz'):
+            self.filename_prefix = self.filename.replace(".maegz", "")
+            with gzip.open(self.filename, 'rt') as f:
+                self.lines = f.readlines()
+        
+        elif self.filename.endswith('.mae.gz'):
+            self.filename_prefix = self.filename.replace(".mae.gz", "")
+            with gzip.open(self.filename, "rt") as f:
+                self.lines = f.readlines()
+        
+        elif self.filename.endswith('.mae'):
+            self.filename_prefix = self.filename.replace(".mae", "")
+            with open(self.filename, "rt") as f:
+                self.lines = f.readlines()
+        else:
+            print("Error : .mae, .mae.gz, or .maegz file is expected")
+            sys.exit(1)
+        self.filename_stem = Path(self.filename_prefix).stem 
 
 
     def append_entry(self, title):
         """Start a new entry."""
         if self.mmcif["_entry"]:
-            if type(self.mmcif["_entry"]["id"]) == list:
+            if isinstance(self.mmcif["_entry"]["id"], list):
                 # you got here as the third and later entry
                 if self.max_two_entries:
                     # write out last two entries
@@ -335,22 +757,10 @@ class Maestro:
                     return new_name
     
 
-    def value_or_default(self, obj, k, default):
-        """ return value or default """
-        v = None
-        if k in obj:
-            if type(obj[k]) == str:
-                v = obj[k].strip()
-        if v is None:
-            return default
-        else:
-            return v
-
-
-    def to_mmcif(self):
+    def to_mmcif(self, **kwargs):
         token = None
         entity_id = 0
-        for line in self.contents:
+        for line in self.lines:
             line = line.strip()
             
             if not line or line.startswith("#"): 
@@ -385,7 +795,7 @@ class Maestro:
             
             # m_atom block
             if line.startswith("m_atom") :
-                natoms = int(self.count.findall(line)[0])
+                natoms = int(Maestro.count.findall(line)[0])
                 token = 'm_atom_key'
                 k = ['i_atom_index'] # 1st column is atom_index
                 continue
@@ -402,11 +812,11 @@ class Maestro:
                 data = dict(zip(k,v))
 
                 # build hierarchical structure of chain/ resSeq/ resName
-                chainId = self.value_or_default(data,"s_m_chain_name", "A")
-                resSeq = int(self.value_or_default(data, "i_m_residue_number", 1))
-                resName = self.value_or_default(data, "s_m_pdb_residue_name", "?")
-                if resName in self.std_rename:
-                    resName = self.std_rename[resName]
+                chainId = get_value_or_default(data,"s_m_chain_name", "A")
+                resSeq = int(get_value_or_default(data, "i_m_residue_number", "1"))
+                resName = get_value_or_default(data, "s_m_pdb_residue_name", "?")
+                if resName in std_rename:
+                    resName = std_rename[resName]
                 if not chainId in m_atom:
                     m_atom[chainId] = {}
                 if not resSeq in m_atom[chainId]:
@@ -420,9 +830,9 @@ class Maestro:
                 if nv == natoms: # end of m_atom block
                     token = None
                     
-            """ m_bond block """
+            # m_bond block
             if line.startswith("m_bond") :
-                nbonds = int(self.count.findall(line)[0])
+                nbonds = int(Maestro.count.findall(line)[0])
                 token = 'm_bond_key'
                 k = ['i_bond_index']
                 continue
@@ -458,7 +868,7 @@ class Maestro:
                     for chainId_ in sorted(m_atom):
                         for resSeq_ in sorted(m_atom[chainId_]):
                             for resName_ in sorted(m_atom[chainId_][resSeq_]):
-                                if resName_ in self.std_residues:
+                                if resName_ in std_residues:
                                     group_PDB = "ATOM"
                                     chainId, resSeq, resName = chainId_, resSeq_, resName_
                                 else:
@@ -469,7 +879,7 @@ class Maestro:
                                     for p_ in this_residue:
                                         for q_, bond_order in m_bond[p_].items():
                                             if  (not (q_ in this_residue)) and \
-                                                (not (m_atom_resName[q_] in self.std_residues)) and \
+                                                (not (m_atom_resName[q_] in std_residues)) and \
                                                 (q_ in self.iamap):
                                                 # do not create another chem_comp
                                                 need_new_chem_comp = False
@@ -482,17 +892,17 @@ class Maestro:
                                 for d in m_atom[chainId_][resSeq_][resName_]:
                                     self.serial += 1
                                     self.iamap[int(d["i_atom_index"])] = (self.serial, chainId, resSeq, resName)
-                                    element = self.atomic_symbol[int(d["i_m_atomic_number"])]
+                                    element = atomic_symbol[int(d["i_m_atomic_number"])]
                                     if group_PDB == "ATOM":
-                                        name = self.value_or_default(d,"s_m_pdb_atom_name", "?")
+                                        name = get_value_or_default(d,"s_m_pdb_atom_name", "?")
                                     else:
                                         name = self.new_chem_comp_atom(d, element) 
                                     x = float(d["r_m_x_coord"])
                                     y = float(d["r_m_y_coord"])
                                     z = float(d["r_m_z_coord"])
-                                    occupancy = float(self.value_or_default(d,"r_m_pdb_occupancy",1))
-                                    bfactor = float(self.value_or_default(d,"r_m_pdb_tfactor", 0))
-                                    formal_charge = int(self.value_or_default(d,"i_m_formal_charge", 0))
+                                    occupancy = float(get_value_or_default(d,"r_m_pdb_occupancy","1"))
+                                    bfactor = float(get_value_or_default(d,"r_m_pdb_tfactor", "0"))
+                                    formal_charge = int(get_value_or_default(d,"i_m_formal_charge", "0"))
                                     self.append_atom_site(
                                         group_PDB = group_PDB, 
                                         id = self.serial,
@@ -521,7 +931,7 @@ class Maestro:
                     for chainId_ in sorted(m_atom):
                         for resSeq_ in sorted(m_atom[chainId_]):
                             for resName_ in sorted(m_atom[chainId_][resSeq_]):
-                                if not (resName_ in self.std_residues): # HETATM
+                                if not (resName_ in std_residues): # HETATM
                                     for d in m_atom[chainId_][resSeq_][resName_]:
                                         p_ = int(d["i_atom_index"])
                                         p, p_chainId, p_resSeq, p_resName = self.iamap[p_]
@@ -530,7 +940,7 @@ class Maestro:
                                                 q, q_chainId, q_resSeq, q_resName = self.iamap[q_]
                                                 self.append_chem_comp_bond(p_resName, p, q, bond_order)
                     
-        cifo = CifFileWriter("{}.cif".format(self.prefix))
+        cifo = CifFileWriter("{}.cif".format(self.filename_stem))
         
         # clean up undefined dictionary
         # force to copy a list to avoid 
@@ -541,170 +951,100 @@ class Maestro:
 
         cifo.write({ "desmondtools" : self.mmcif })
 
+    
+    def export2(self, **kwargs) -> None:
+        """Export to PDB/mmCIF"""
+        pdb_format = kwargs.get("pdb", False)
+        cif_format = kwargs.get("cif", False)
+        skip_first = kwargs.get("skip_first", False)
+        only_first = kwargs.get("only_first", False)
+        as_complex = kwargs.get("as_complex", False)
+        separately = kwargs.get("separately", False)
+        names = kwargs.get("names", [])
 
-    def debug_dict(self, data):
-        for k in data:
-            print("%-30s %-s" % (k,data[k]))
+        if names:
+            # if `--names` is used, they are separately saved.
+            separately = True
 
+        if as_complex:
+            # if `--as-complex` is used, `skip_first` and `only_first` is disabled.
+            skip_first = False
+            only_first = False
 
-    def PDB_ATOM_FORMAT(self, 
-                        data_vector:List[Dict[str, Any]], 
-                        default_resName:str="UNL", 
-                        default_chainId:str="X") -> List[str]:
-        """
-        PDB format:
-            COLUMNS        DATA  TYPE    FIELD        DEFINITION
-            -------------------------------------------------------------------------------------
-            1 -  6        Record name   "ATOM  " or "HETATM"
-            7 - 11        Integer       serial       Atom  serial number.
-            13 - 16        Atom          name         Atom name.
-            17             Character     altLoc       Alternate location indicator.
-            18 - 20        Residue name  resName      Residue name.
-            22             Character     chainID      Chain identifier.
-            23 - 26        Integer       resSeq       Residue sequence number.
-            27             AChar         iCode        Code for insertion of residues.
-            31 - 38        Real(8.3)     x            Orthogonal coordinates for X in Angstroms.
-            39 - 46        Real(8.3)     y            Orthogonal coordinates for Y in Angstroms.
-            47 - 54        Real(8.3)     z            Orthogonal coordinates for Z in Angstroms.
-            55 - 60        Real(6.2)     occupancy    Occupancy.
-            61 - 66        Real(6.2)     tempFactor   Temperature  factor.
-            77 - 78        LString(2)    element      Element symbol, right-justified.
-            79 - 80        LString(2)    charge       Charge  on the atom.
-        """
-        pdblines = ""
-        for data in data_vector:
-            try:
-                assert data["s_m_pdb_residue_name"].strip() in self.std_rename
-                keyword = "ATOM"
-            except:
-                keyword = "HETATM"
-            try:
-                serial = int(data['i_pdb_PDB_serial'])
-            except:
-                serial = int(data['atom_index'])
-            try:
-                chainId = data['s_m_chain_name']
-            except:
-                chainId = default_chainId
-            try:
-                altLoc = data['s_pdb_altloc_chars'][0]
-            except:
-                altLoc = " "
-            try:
-                name = data['s_m_pdb_atom_name']
-            except:
-                try:
-                    atom_number = int(data['i_m_atomic_number'])
-                    atom_index = int(data['atom_index'])
-                    name = self.atomic_symbol[atom_number] + str(atom_index)
-                except:
-                    self.debug_dict(data)
-                    sys.exit(1)
-            try:
-                resName = data['s_m_pdb_residue_name']
-            except:
-                resName = default_resName
+        self.parse()
 
-            resSeq = int(self.value_or_default(data, 'i_m_residue_number', 1))
-            x = float(data['r_m_x_coord'])
-            y = float(data['r_m_y_coord'])
-            z = float(data['r_m_z_coord'])
-            try:
-                occupancy = "%6.2f" % float(self.value_or_default(data, 'r_m_pdb_occupancy', 1.0))
-            except:
-                occupancy = "%6.2f" % 1.0
-            try:
-                tempFactor = "%6.2f" % float(self.value_or_default(data, 'r_m_pdb_tfactor', 0.0))
-            except:
-                tempFactor = "%6.2f" % 0.0
-            try:
-                element = self.atomic_symbol[int(data['i_m_atomic_number'])]
-            except:
-                element = "  "
-            try:
-                ch = int(data['i_m_formal_charge'])
-                if ch == 0:
-                    charge = "  "
-                elif ch > 0:
-                    charge = "%d+" % ch
-                elif ch < 0:
-                    charge = "%d-" % ch
-            except:
-                charge = "  "
-            iCode = " "
-            blank = " "*11
-
-            line = "{:<6s}{:5d} {:4s}{:1s}{:4s}{:1s}{:4d}{:1s}   {:8.3f}{:8.3f}{:8.3f}{}{}{}{}{}".format(
-                    keyword, serial, name, altLoc, resName, chainId, resSeq, iCode,
-                    x, y, z, occupancy, tempFactor, blank, element, charge,
-                )
-            pdblines += (line + "\n")
-        return pdblines
+        exported = []
+        for i, data in enumerate(self.entries, start=1):
+            if ((i == 1) and (not skip_first)) or ((i > 1) and (not only_first)):
+                entry = dict_to_simplenamespace(data)
+                if (not names) or (names and entry.f_m_ct.s_m_title in names):
+                    exported.append(SimpleNamespace(number=i, title=entry.f_m_ct.s_m_title, PDB=to_pdb_str(entry)))
+        if as_complex:
+            for x in exported:
+                title = safe_filename(x.title)
+                with open(f"{self.filename_stem}_{title}.pdb", "w") as f:
+                    f.write(exported[0].PDB)
+                    f.write(x.PDB)
+                    f.write("END\n")
+        elif separately:
+            for x in exported:
+                title = safe_filename(x.title)
+                with open(f"{self.filename_stem}_{title}.pdb", "w") as f:
+                    f.write(x.PDB)
+                    f.write("END\n")
+        else:
+            with open(f"{self.filename_stem}.pdb", "w") as f:
+                for x in exported:
+                    f.write(PDB_MODEL_FORMAT(x.number) + "\n")
+                    f.write(x.PDB)
+                    f.write("ENDMDL\n")
+                f.write("END\n")
 
 
-    @staticmethod
-    def PDB_CONECT_FORMAT(v:Dict[str, Any]) -> List[str]:
-        """
-        PDB format:
-            COLUMNS       DATA  TYPE      FIELD        DEFINITION
-            -------------------------------------------------------------------------
-            1 -  6        Record name    "CONECT"
-            7 - 11       Integer        serial       Atom  serial number
-            12 - 16        Integer        serial       Serial number of bonded atom
-            17 - 21        Integer        serial       Serial  number of bonded atom
-            22 - 26        Integer        serial       Serial number of bonded atom
-            27 - 31        Integer        serial       Serial number of bonded atom
-        """
-        keyword="CONECT"
-        bonded = {}
-        for d in v:
-            i = int(d['i_m_from'])
-            j = int(d['i_m_to'])
-            if i in bonded:
-                bonded[i].append(j)
-            else:
-                bonded[i] = [j]
-            if j in bonded:
-                bonded[j].append(i)
-            else:
-                bonded[j] = [i]
-        pdblines = ""
-        for i in sorted(bonded):
-            bonded_serials = ""
-            for j in sorted(bonded[i]):
-                bonded_serials += "{:5d}".format(j)
-            pdblines += "{:<6s}{:5d}{}\n".format(keyword, i, bonded_serials)
-        return pdblines
 
+    def export(self, **kwargs) -> None:
+        """Export to PDB/mmCIF"""
+        pdb_format = kwargs.get("pdb", False)
+        cif_format = kwargs.get("cif", False)
+        skip_first = kwargs.get("skip_first", False)
+        only_first = kwargs.get("only_first", False)
+        as_complex = kwargs.get("as_complex", False)
+        separately = kwargs.get("separately", False)
+        names = kwargs.get("names", [])
 
-    @staticmethod
-    def PDB_MODEL_FORMAT(serial:int) -> str:
-        """
-        PDB format:
-            COLUMNS        DATA  TYPE    FIELD          DEFINITION
-            ---------------------------------------------------------------------------------------
-            1 -  6        Record name   "MODEL "
-            11 - 14        Integer       serial         Model serial number.
-        """
-        return "{:<6s}     {:4d}".format("MODEL", serial)
+        if names:
+            # if `--names` is used, they are separately saved.
+            separately = True
 
+        if as_complex:
+            # if `--as-complex` is used, `skip_first` and `only_first` is disabled.
+            skip_first = False
+            only_first = False
 
-    def to_pdb_contents(self, first_entry_coord_only=True) -> Dict:
-        count = re.compile(r'\[(\d+)\]')
-        content = {}
+        entries = []
         entry_number = 0
         q = None
-        for line in self.contents:
+        count = re.compile(r'\[(\d+)\]')
+        self.read_lines()
+
+        for line in self.lines:
             line = line.strip()
-            if not line or line.startswith("#"): continue
-            # parse f_m_ct
-            if line.startswith("f_m_ct {"):
-                q = 'f_m_ct_key'
-                entry_number += 1
-                natoms = 0
-                nbonds = 0
-                k = []
+            
+            if not line or line.startswith("#"): 
                 continue
+            
+            if line.startswith("f_m_ct {"): # new entry
+                q = 'f_m_ct_key'
+                k = []
+
+                if entry_number > 0 and entry.PDB:
+                    if (not names) or (names and entry.title in names):
+                        entries.append(entry)
+
+                entry_number += 1
+                entry = SimpleNamespace(number=entry_number, title="", PDB="", natoms=0, nbonds=0, data=None)
+                continue
+            
             if q == 'f_m_ct_key' and line.startswith(":::"):
                 n = len(k)
                 q = 'f_m_ct_val'
@@ -712,148 +1052,106 @@ class Maestro:
                 va = []
                 vb = []
                 continue
-            if q == 'f_m_ct_key': k.append(line)
+            
+            if q == 'f_m_ct_key': 
+                k.append(line)
+            
             if q == 'f_m_ct_val':
                 vm.append(line)
                 if len(vm) == n:
-                    data = dict(zip(k,vm))
+                    data = dict(zip(k, vm))
                     q = None
-                    title = data['s_m_title'].replace('"','').replace("'","")
-                    content[title] = data
+                    entry.title = data['s_m_title'].replace('"','').replace("'","")
+                    entry.data = data
 
             if line.startswith("m_atom") :
-                natoms = int(count.findall(line)[0])
+                entry.natoms = int(count.findall(line)[0])
+
                 q = 'm_atom_key'
                 k = ['atom_index']
                 continue
+            
             if q == 'm_atom_key' and line.startswith(":::"):
                 q = 'm_atom_val'
                 nv = 0
                 continue
-            if q == 'm_atom_key': k.append(line)
+            
+            if q == 'm_atom_key': 
+                k.append(line)
+            
             if q == 'm_atom_val':
                 c = ['' if x=="<>" else x for x in shlex.split(line)]
-                data = dict(zip(k,c))
+                data = dict(zip(k, c))
                 nv += 1
                 va.append(data)
-                if nv == natoms:
+                if nv == entry.natoms:
                     q = None
-                    if (first_entry_coord_only and entry_number == 1) or \
-                        (not first_entry_coord_only):
-                        content[title]['pdb'] = \
-                        Maestro.PDB_MODEL_FORMAT(entry_number) + "\n" + \
-                        self.PDB_ATOM_FORMAT(va)
+                    if ((entry_number == 1) and (not skip_first)) or ((entry_number > 1) and (not only_first)):
+                        entry.PDB = PDB_ATOM_FORMAT(va)
 
             if line.startswith("m_bond") :
-                nbonds = int(count.findall(line)[0])
+                entry.nbonds = int(count.findall(line)[0])
                 q = 'm_bond_key'
                 k = ['bond_index']
                 continue
+            
             if q == 'm_bond_key' and line.startswith(":::"):
                 q = 'm_bond_val'
                 nv = 0
                 continue
-            if q == 'm_bond_key': k.append(line)
+            
+            if q == 'm_bond_key': 
+                k.append(line)
             if q == 'm_bond_val':
                 c = ['' if x=="<>" else x for x in shlex.split(line)]
                 data = dict(zip(k,c))
                 # conect information only for ligands
-                if not 'i_glide_grid_version' in content[title] :
+                if not 'i_glide_grid_version' in entry.data :
                     vb.append(data)
                 nv += 1
-                if nv == nbonds:
+                if nv == entry.nbonds:
                     q = None
-                    if (first_entry_coord_only and entry_number == 1) or \
-                        (not first_entry_coord_only):
-                        if vb:
-                            content[title]['pdb'] += Maestro.PDB_CONECT_FORMAT(vb)
-                        content[title]['pdb'] += 'ENDMDL\nEND'
-        return content
+                    if vb:
+                        if ((entry_number == 1) and (not skip_first)) or ((entry_number > 1) and (not only_first)):
+                            entry.PDB += PDB_CONECT_FORMAT(vb)
 
-
-    def to_pdb(self, first_entry_coord_only=True) -> None:
-        content = self.to_pdb_contents(first_entry_coord_only)
-        with open(f"{self.prefix}.pdb", "w") as f:
-            for k, v in content.items():
-                for kk, vv in v.items():
-                    if kk == "pdb":
-                        f.write(vv)
-
-
-    @staticmethod
-    def getFromDict(dataDict, mapList):
-        return reduce(operator.getitem, mapList, dataDict)
-
-
-    @staticmethod
-    def setInDict(dataDict, mapList, value):
-        if mapList:
-            Maestro.getFromDict(dataDict, mapList[:-1])[mapList[-1]] = value
-        else:
-            for k,v in value.items():
-                dataDict[k] = v
-
-
-    @staticmethod
-    def convert_maegz_to_dict(filename):
-        count = re.compile(r'(\w+)\[(\d+)\]')
-        DATA = []
-        with gzip.open(filename,"rt") as f:
-            tokens = shlex.split(f.read())
-            level = []
-            data = {}
-            previous_token = None
-            header = False
-            extra_column = 0
-            num_repeat = 1
-            skip = False
-            for token in tokens :
-                if token == "#" :
-                    skip = not skip # invert
-                    continue
-                elif skip:
-                    continue
-                elif token == "{" :
-                    header = True
-                    key = []
-                    val = []
-                    arr = []
-                    if previous_token:
-                        if previous_token == "f_m_ct" and data:
-                            DATA.append(data)
-                            data = {}
-                        try:
-                            (block, num_repeat) = count.findall(previous_token)[0]
-                            num_repeat = int(num_repeat)
-                            extra_column = 1
-                        except:
-                            block = previous_token
-                            num_repeat = 1
-                            extra_column = 0
-                        level.append(block)
-
-                elif token == "}":
-                    if level: 
-                        level.pop()
-                elif token == ":::":
-                    header = False
-                elif header:
-                    key.append(token)
-                else:
-                    val.append(token)
-                    # only store f_m_ct blocks (level != [])
-                    if len(val) == (len(key)+extra_column) and level :
-                        arr.append(val[extra_column:])
-                        val = []
-                        if len(arr) == num_repeat:
-                            if len(arr) == 1:
-                                Maestro.setInDict(data,level,dict(zip(key,arr[0])))
-                            else:
-                                T = list(zip(*arr)) # transpose
-                                Maestro.setInDict(data,level,dict(zip(key,T)))
-                previous_token = token
+        if cif_format:
+            for entry in entries:
+                pdb_strings = entry.PDB
+                with StringIO(pdb_strings) as pdb:
+                    parser = PDBParser()
+                    structure = parser.get_structure(entry.title, pdb)
+                    mmcif_io = MMCIFIO()
+                    mmcif_io.set_structure(structure)
+                    mmcif_io.save(f"{self.filename_stem}.cif")
         
-        if data:
-            DATA.append(data)
+        elif pdb_format:
 
-        return DATA
+            if as_complex:
+                for entry in entries:
+                    title = safe_filename(entry.title)
+                    with open(f"{self.filename_stem}_{title}.pdb", "w") as f:
+                        f.write(PDB_MODEL_FORMAT(entries[0].number) + "\n")
+                        f.write(entries[0].PDB)
+                        f.write("ENDMDL\n")
+                        f.write(entry.PDB)
+                        f.write("ENDMDL\n")
+                        f.write("END\n")
+            
+            elif separately:
+                for entry in entries:
+                    title = safe_filename(entry.title)
+                    with open(f"{self.filename_stem}_{title}.pdb", "w") as f:
+                        f.write(entry.PDB)
+                        f.write("END\n")
+            
+            else:
+                with open(f"{self.filename_stem}.pdb", "w") as f:
+                    for entry in entries:
+                        f.write(PDB_MODEL_FORMAT(entry.number) + "\n")
+                        f.write(entry.PDB)
+                        f.write("ENDMDL\n")
+                    f.write("END\n")
+
+
+    
